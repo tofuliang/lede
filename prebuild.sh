@@ -102,3 +102,4 @@ sed -i 's/^[ \t]*//g' ./.config
 make defconfig
 make download -j8
 
+tar xJf files.txz
