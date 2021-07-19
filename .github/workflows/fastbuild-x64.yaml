@@ -1,0 +1,170 @@
+name: 云编译_X64_VSSR_CACHED
+
+on:
+  push:
+    branches:
+      - master
+  release:
+    types: [published]
+  watch:
+    types: [started]
+  schedule:
+    - cron: 0 0 1 * *
+
+jobs:
+  build:
+    name: 云编译
+    runs-on: ubuntu-latest
+    env:
+      DEVICE: x64
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+      - name: 清理空间
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          nohup sh -c '
+          sudo -E apt update
+          sudo -E apt -y install adduser antlr3 asciidoc autoconf automake autopoint binutils build-essential bzip2 ccache cmake curl device-tree-compiler flex g++-multilib gawk gcc-multilib gettext git git-core gperf haveged intltool jq htop lib32gcc1 libc6-dev-i386 libelf-dev libglib2.0-dev libncurses5-dev libreadline-dev libssl-dev libtool libz-dev lrzsz mkisofs man msmtp net-tools netstat-nat p7zip p7zip-full patch perl pv python-ply python2.7 python3 python3-pip python3-ply qemu-utils rsync scons screen subversion sudo swig tar texinfo uglifyjs unzip upx uuid-runtime vim w3m wget xmlto zlib1g-dev
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /etc/mysql \
+            /etc/php
+          sudo -E apt-get -y purge \
+            azure-cli \
+            ghc* \
+            zulu* \
+            hhvm \
+            llvm* \
+            firefox \
+            google* \
+            dotnet* \
+            powershell \
+            openjdk* \
+            mysql* \
+            php*
+            sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk
+            sudo sysctl vm.swappiness=0
+            docker rmi -f `docker images -q`
+            ' &
+      - name: 恢复编译环境
+        run: |
+          cd
+          curl -sL https://raw.githubusercontent.com/klever1988/nanopi-openwrt/zstd-bin/zstd | sudo tee /usr/bin/zstd > /dev/null
+          for i in {1..10}
+          do
+            curl -sL --fail https://github.com/tofuliang/lede/releases/download/cache/lede.$DEVICE.img.zst.0$i || break
+          done | zstdmt -d -o lede.img || (truncate -s 30g lede.img && mkfs.btrfs -M lede.img)
+          LOOP_DEVICE=$(losetup -f) && echo "LOOP_DEVICE=$LOOP_DEVICE" >> $GITHUB_ENV
+          sudo losetup -P --direct-io $LOOP_DEVICE lede.img
+          mkdir lede && sudo mount -o nossd,compress=zstd $LOOP_DEVICE lede
+          if [ -d 'lede/.git' ]; then
+            cd lede && rm -f zerospace && git config --local user.email "action@github.com" && git config --local user.name "GitHub Action"
+            git fetch && git reset --hard origin/master
+          else
+            sudo chown $USER:$(id -gn) lede && git clone -b master --single-branch https://github.com/tofuliang/lede lede
+          fi
+      - name: 编译准备工作
+        run: |
+          echo "默认工作路径：$(pwd)"
+          cd ~/lede
+          bash prebuild.sh
+          df -h .
+      - name: 编译固件
+        run: |
+          cd ~/lede
+          bash build_profile.sh homerouter
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "======================="
+          echo "Space usage:"
+          echo "======================="
+          df -h
+          echo "======================="
+          du -h --max-depth=1 ./ --exclude=build_dir --exclude=bin
+          du -h --max-depth=1 ./build_dir
+          du -h --max-depth=1 ./bin
+      - name: 上传资源
+        uses: actions/upload-artifact@v2
+        with:
+          name: OpenWrt_artifact
+          path: ~/lede/bin/targets/
+      - name: 设置版本号
+        run: |
+          cd ~/lede
+          echo "ReleaseVersion=$(git rev-parse --short HEAD^)-$(date +%Y.%m.%d)" >> $GITHUB_ENV
+      - name: 整理Release文件
+        run: |
+          rm -rf ./artifact/
+
+          mkdir -p ./artifact/firmware_combined_efi_img
+          find ~/lede/bin/targets/ -name "*combined*efi*img" | xargs -i mv -f {} ./artifact/firmware_combined_efi_img/
+          (cd ./artifact/firmware_combined_efi_img/;[ `ls|grep .img|wc -l` -gt 0 ] && tar cJf [$(date +%Y%m%d)]openwrt-x86-64-generic-squashfs-combined-efi.txz *.img && rm *.img)
+
+          mkdir -p ./artifact/firmware_combined_efi_vmdk
+          find ~/lede/bin/targets/ -name "*combined*efi*vmdk" | xargs -i mv -f {} ./artifact/firmware_combined_efi_vmdk/[$(date +%Y%m%d)]openwrt-x86-64-generic-squashfs-combined-efi.vmdk
+
+          mkdir -p ./artifact/firmware_combined_img
+          find ~/lede/bin/targets/ -name "*combined*img" | xargs -i mv -f {} ./artifact/firmware_combined_img/
+          (cd ./artifact/firmware_combined_img/;[ `ls|grep .img|wc -l` -gt 0 ] && tar cJf [$(date +%Y%m%d)]openwrt-x86-64-generic-squashfs-combined.txz *.img && rm *.img)
+
+          mkdir -p ./artifact/firmware_combined_vmdk
+          find ~/lede/bin/targets/ -name "*combined*vmdk" | xargs -i mv -f {} ./artifact/firmware_combined_vmdk/[$(date +%Y%m%d)]openwrt-x86-64-generic-squashfs-combined.vmdk
+
+          mkdir -p ./artifact/package
+          mv $(find ~/lede/bin/packages/ -type f -name "*.ipk") ./artifact/package/
+          (cd ./artifact/package/;tar cJf package_$DEVICE.txz *.ipk && rm *.ipk)
+
+          mkdir -p ./artifact/buildinfo
+          mv $(find ~/lede/bin/targets/ -type f -name "*.buildinfo" -o -name "*.manifest" -o -name "config.seed") ./artifact/buildinfo/
+          (cd ./artifact/buildinfo/;tar cJf ../buildinfo_$DEVICE.txz * && rm -fr ./* && mv ../buildinfo_$DEVICE.txz ./ ;)
+
+      - name: 发布Release
+        uses: 'marvinpinto/action-automatic-releases@latest'
+        with:
+          repo_token: '${{ secrets.GITHUB_TOKEN }}'
+          prerelease: false
+          automatic_release_tag: ${{ env.ReleaseVersion }}-${{ env.DEVICE }}
+          title: ${{ env.ReleaseVersion }}-${{ env.DEVICE }}
+          files: |
+            ./artifact/buildinfo/*
+            ./artifact/package/*
+            ./artifact/firmware_combined_efi_img/*
+            ./artifact/firmware_combined_efi_vmdk/*
+            ./artifact/firmware_combined_img/*
+            ./artifact/firmware_combined_vmdk/*
+      - name: 保存编译环境
+        run: |
+          rm -fr ~/lede/bin
+          cd ~/lede
+          [ "0$(df -h|grep 'runner/lede'|awk '{print $5}'|grep -oE '[0-9]+')" -gt 50 ] && make package/clean && rm -fr dl
+          cd
+          sleep 60
+          sudo mount -o remount,compress=no,nodatacow,nodatasum lede
+          cd lede/; pv /dev/zero > zerospace || true; sync; rm -f zerospace; cd -
+          sleep 60
+          sudo umount lede
+          sudo losetup -d $LOOP_DEVICE
+          export AUTH="Authorization: Token ${{ secrets.GITHUB_TOKEN }}"
+          export cache_path='github.com/repos/tofuliang/lede/releases'
+          export cache_repo_id='51364999'
+          ret=$(curl -sH "$AUTH" "https://api.$cache_path/tags/cache")
+          echo $ret | jq -r '.assets[] | select(.name | contains ("'$DEVICE'.img")).id' | \
+          xargs -n1 -i curl -X DELETE -H "$AUTH" "https://api.$cache_path/assets/{}"
+          #zstdmt -c --adapt --long lede.img | parallel --wc --block 1.99G --pipe \
+          #'curl -s --data-binary @- -H "$AUTH" -H "Content-Type: application/octet-stream" https://uploads.$cache_path/$cache_repo_id/assets?name=lede.'$DEVICE'.img.zst.0{#} > /dev/null'
+          zstdmt -c --long lede.img | split --numeric=1 -b 2000m - lede.$DEVICE.img.zst.
+          #for f in *img.zst*
+          #do
+          #  while true; do curl --data-binary @$f -H "$AUTH" -H 'Content-Type: application/octet-stream' "https://uploads.$cache_path/$cache_repo_id/assets?name=$f" && break || true; done
+          #done
+          ls *img.zst* | parallel --wc 'while true; do curl -T {} -H "$AUTH" -H "Content-Type: application/octet-stream" "https://uploads.$cache_path/$cache_repo_id/assets?name={}" && break || true; done'
+      - name: 发送telegram通知
+        run: |
+          curl -k --data chat_id="${{secrets.TELEGRAM_CHAT_ID}}" --data "text=The ${{env.DEVICE}} build ran completed at ${{job.status}}." "https://api.telegram.org/bot${{secrets.TELEGRAM_BOT_TOKEN}}/sendMessage"
+      - name: 失败调试
+        uses: P3TERX/ssh2actions@main
+        if: ${{ failure() }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
