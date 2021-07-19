@@ -1,0 +1,179 @@
+#
+# This is free software, lisence use MIT.
+#
+# Copyright (C) 2019 P3TERX <https://p3terx.com>
+# Copyright (C) 2019 KFERMercer <KFER.Mercer@gmail.com>
+#
+# <https://github.com/KFERMercer/OpenWrt-CI>
+# Narizgnaw：非常感谢KFERMercer大佬提供的OpenWrt-CI。
+
+name: 云编译_VSSR
+
+on:
+  schedule:
+    - cron: 0 0 1 * *
+  push:
+    branches:
+      - master
+  release:
+    types: [published]
+  watch:
+    types: [started]
+env:
+  rebuildToolchains: 'true'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.event.repository.owner.id == github.event.sender.id
+
+    steps:
+      - name: 检出主分支
+        uses: actions/checkout@v2
+        with:
+          ref: 'master'
+          fetch-depth: 0
+      - name: 设置版本号
+        run: |
+          echo "ReleaseVersion=$(git rev-parse --short HEAD^)-$(date +%Y.%m.%d)" >> $GITHUB_ENV
+          echo "ToolchainsVersion=$(git log --pretty=tformat:"%h" -n1 tools toolchain)" >> $GITHUB_ENV
+      - name: 安装编译环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          docker rmi -f `docker images -q`
+      - name: 清理系统环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          echo "Deleting files, please wait ..."
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /etc/mysql \
+            /etc/php
+          sudo -E apt-get -y purge \
+            azure-cli \
+            ghc* \
+            zulu* \
+            hhvm \
+            llvm* \
+            firefox \
+            google* \
+            dotnet* \
+            powershell \
+            openjdk* \
+            mysql* \
+            php*
+      - name: 更新软件列表
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get update
+      - name: 安装编译所需环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -y install build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 python2.7 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync uuid-runtime vim perl tar man sudo adduser netstat-nat net-tools w3m htop screen
+      - name: 进行安装后的清理
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -y autoremove --purge
+          sudo -E apt-get clean
+      - name: 固件编译准备工作
+        run: |
+          bash prebuild.sh
+      - name: 下载Toolchains
+        uses: houqp/download-release-assets-action@v1.0.1
+        continue-on-error: true
+        with:
+          release: tags/toolchains-${{ env.ToolchainsVersion }}
+          repo: tofuliang/lede
+          match: 'toolchains.txz'
+          rename: toolchains.txz
+      - name: 下载ccache
+        uses: houqp/download-release-assets-action@v1.0.1
+        continue-on-error: true
+        with:
+          release: tags/ccache
+          repo: tofuliang/lede
+          match: 'ccache.txz'
+          rename: 'ccache.txz'
+      - name: 恢复缓存
+        continue-on-error: true
+        run: |
+          [ -f toolchains.txz ] && tar xJf toolchains.txz && echo "rebuildToolchains=false" >> $GITHUB_ENV || true
+          [ -f ccache.txz ] && tar xJf ccache.txz || true
+      - name: 进行固件编译
+        continue-on-error: true
+        run: |
+          echo -e "$(nproc) thread build."
+          make -j$(nproc) || make -j1 || make -j1 V=s
+      - name: 打包Toolchains
+        if: env.rebuildToolchains == 'true'
+        run: |
+          echo -e "Packaging Toolchains."
+          tar cJf toolchains.txz staging_dir/host* staging_dir/tool* build_dir/host* build_dir/tool*
+      - name: 打包ccache
+        if: env.rebuildToolchains == 'true'
+        run: |
+          echo -e "Packaging ccache."
+          tar cJf ccache.txz .ccache
+      - name: 上传Toolchains缓存文件
+        uses: 'marvinpinto/action-automatic-releases@latest'
+        if: env.rebuildToolchains == 'true'
+        with:
+          repo_token: '${{ secrets.GITHUB_TOKEN }}'
+          prerelease: false
+          automatic_release_tag: toolchains-${{ env.ToolchainsVersion }}
+          title: toolchains-${{ env.ToolchainsVersion }}
+          files: |
+            ./toolchains.txz
+      - name: 上传ccache缓存文件
+        if: env.rebuildToolchains == 'true'
+        uses: 'marvinpinto/action-automatic-releases@latest'
+        with:
+          repo_token: '${{ secrets.GITHUB_TOKEN }}'
+          prerelease: false
+          automatic_release_tag: ccache
+          title: ccache
+          files: |
+            ./ccache.txz
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: OpenWrt_artifact
+          path: ./bin/targets/
+      - name: 整理Release文件
+        run: |
+          rm -rf ./artifact/
+          mkdir -p ./artifact/firmware_combined_efi_img
+          find ./bin/targets/ -name "*combined*efi*img" | xargs -i mv -f {} ./artifact/firmware_combined_efi_img/
+          (cd ./artifact/firmware_combined_efi_img/;[ `ls|grep .img|wc -l` -gt 0 ] && tar cJf openwrt-x86-64-generic-squashfs-combined-efi.txz *.img && rm *.img)
+          mkdir -p ./artifact/firmware_combined_efi_vmdk
+          find ./bin/targets/ -name "*combined*efi*vmdk" | xargs -i mv -f {} ./artifact/firmware_combined_efi_vmdk/openwrt-x86-64-generic-squashfs-combined-efi.vmdk
+          mkdir -p ./artifact/firmware_combined_img
+          find ./bin/targets/ -name "*combined*img" | xargs -i mv -f {} ./artifact/firmware_combined_img/
+          (cd ./artifact/firmware_combined_img/;[ `ls|grep .img|wc -l` -gt 0 ] && tar cJf openwrt-x86-64-generic-squashfs-combined.txz *.img && rm *.img)
+          mkdir -p ./artifact/firmware_combined_vmdk
+          find ./bin/targets/ -name "*combined*vmdk" | xargs -i mv -f {} ./artifact/firmware_combined_vmdk/openwrt-x86-64-generic-squashfs-combined.vmdk
+          mkdir -p ./artifact/package
+          rm -rf $(find ./bin/targets/ -type d -name "packages")
+          cp -rf $(find ./bin/packages/ -type f -name "*.ipk") ./artifact/package/
+          (cd ./artifact/package/;tar cJf package.txz *.ipk && rm *.ipk)
+          mkdir -p ./artifact/buildinfo
+          cp -rf $(find ./bin/targets/ -type f -name "*.buildinfo" -o -name "*.manifest" -o -name "config.seed") ./artifact/buildinfo/
+      - name: 发布Release
+        uses: 'marvinpinto/action-automatic-releases@latest'
+        with:
+          repo_token: '${{ secrets.GITHUB_TOKEN }}'
+          prerelease: false
+          automatic_release_tag: ${{ env.ReleaseVersion }}
+          title: ${{ env.ReleaseVersion }}
+          files: |
+            ./artifact/buildinfo/*
+            ./artifact/package/*
+            ./artifact/firmware_combined_efi_img/*
+            ./artifact/firmware_combined_efi_vmdk/*
+            ./artifact/firmware_combined_img/*
+            ./artifact/firmware_combined_vmdk/*
