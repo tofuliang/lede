@@ -96,11 +96,6 @@ svn co https://github.com/tofuliang/openwrt-package/trunk/others/luci-app-contro
 # svn co https://github.com/fw876/helloworld/trunk/tcping tcping
 # svn co https://github.com/fw876/helloworld/trunk/naiveproxy naiveproxy
 (cd UnblockNeteaseMusic-Go; \
-sed -i 's/PKG_VERSION:=.*/PKG_VERSION:=21208fa01/' Makefile; \
-sed -i 's/PKG_SOURCE:=.*/PKG_SOURCE_PROTO:=git/' Makefile; \
-sed -i 's/PKG_SOURCE_URL:=.*/PKG_SOURCE_URL:=https:\/\/github.com\/tofuliang\/UnblockNeteaseMusic.git/' Makefile; \
-sed -i 's/PKG_HASH:=.*/PKG_SOURCE_VERSION:=master/' Makefile; \
-sed -i 's/PKG_BUILD_DIR:=.*//' Makefile; \
 sed -i 's/"kuwo:kugou"/"kuwo:kugou:qq" -lv -ba -bu -sef/' root/etc/init.d/unblockmusic \
 )
 cd ../..
