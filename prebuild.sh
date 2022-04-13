@@ -43,9 +43,9 @@ cd package/lean
 rm -fr smartdns
 (git clone --depth 1 https://github.com/pymumu/smartdns smartdns_repo;
 mv smartdns_repo/package/openwrt smartdns;rm -fr smartdns_repo)
-sed -i "s/1.2019.28/2021.35/g" smartdns/Makefile
+sed -i "s/1.2019.28/2021.36.1/g" smartdns/Makefile
 # sed -i "s/TITLE:=smartdns server/TITLE:=latest smartdns server/g" smartdns/Makefile
-sed -i 's/982002e836e486fb4e360bc10e84e7e7197caf46/f50e4dd0813da9300580f7188e44ed72a27ae79c/g' smartdns/Makefile
+sed -i 's/982002e836e486fb4e360bc10e84e7e7197caf46/24661c2419a81e660b11a0e3d35a3bc269cd4bfa/g' smartdns/Makefile
 sed -i 's/PKG_MIRROR_HASH:=ae889b521ecf114660ce5597af5c361f5970a7dcb75dadf61b938ba3d2baba54//g' smartdns/Makefile
 sed -i 's/$(PKG_BUILD_DIR)\/package\/openwrt/./g' smartdns/Makefile
 
