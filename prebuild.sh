@@ -103,6 +103,7 @@ git clone --depth 1 https://github.com/tty228/luci-app-serverchan luci-app-serve
 git clone --depth 1 https://github.com/tofuliang/luci-app-koolproxyR luci-app-koolproxyR
 git clone --depth 1 https://github.com/destan19/OpenAppFilter OpenAppFilter
 git clone --depth 1 https://github.com/tofuliang/luci-app-vssr luci-app-vssr
+svn co https://github.com/vernesong/OpenClash/trunk/luci-app-openclash luci-app-openclash
 git clone --depth 1 https://github.com/jerrykuku/lua-maxminddb lua-maxminddb
 # git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon luci-theme-argon
 # (cd luci-theme-argon;git remote set-branches origin '18.06';git fetch --depth 1 origin '18.06';git checkout '18.06')
