@@ -1,0 +1,64 @@
+diff -urN a/luasrc/controller/mia.lua b/luasrc/controller/mia.lua
+--- a/luasrc/controller/mia.lua	2024-06-19 19:13:02.000000000 +0800
++++ b/luasrc/controller/mia.lua	2024-06-19 19:18:21.000000000 +0800
+@@ -5,8 +5,9 @@
+ 		return
+ 	end
+ 
+-	entry({"admin", "services", "mia"}, cbi("mia"), _("Internet Access Schedule Control"), 30).dependent = true
+-	entry({"admin", "services", "mia", "status"}, call("act_status")).leaf = true
++	entry({"admin", "control"}, firstchild(), "Control", 44).dependent = false
++	entry({"admin", "control", "mia"}, cbi("mia"), _("Internet Access Schedule Control"), 30).dependent = true
++	entry({"admin", "control", "mia", "status"}, call("act_status")).leaf = true
+ end
+ 
+ function act_status()
+diff -urN a/root/etc/init.d/mia b/root/etc/init.d/mia
+--- a/root/etc/init.d/mia	2024-06-19 19:13:02.000000000 +0800
++++ b/root/etc/init.d/mia	2024-06-19 19:18:21.000000000 +0800
+@@ -45,6 +45,7 @@
+ 	fi
+ 	if [ "$enable" == "1" ]; then
+ 		iptables -t filter -I MIA  -m mac --mac-source $macaddr -m time --kerneltz --timestart $timeon --timestop $timeoff --weekdays $Z1$Z2$Z3$Z4$Z5$Z6$Z7 -j DROP
++		ip6tables -t filter -I MIA  -m mac --mac-source $macaddr -m time --kerneltz --timestart $timeon --timestop $timeoff --weekdays $Z1$Z2$Z3$Z4$Z5$Z6$Z7 -j DROP
+ 	fi
+ 	for n in $(seq 1 7)
+ 	do
+@@ -60,6 +61,7 @@
+ 		for macaddrb in $blackMacAdd
+ 		do
+ 			iptables -t nat -D $type -m mac --mac-source $macaddrb -j RETURN
++			ip6tables -t nat -D $type -m mac --mac-source $macaddrb -j RETURN
+ 		done
+ 	}
+ }
+@@ -69,20 +71,21 @@
+ 	enable=$(uci get mia.@basic[0].enable)
+ 	[ $enable -eq 0 ] && exit 0
+   iptables -t filter -N MIA
+-  iptables -I INPUT -p udp --dport 53 -m comment --comment "Rule For Control" -j MIA
+-  iptables -I INPUT -p tcp --dport 53 -m comment --comment "Rule For Control" -j MIA
+-  iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 53 -m comment --comment "Rule For Control"
+-  iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-ports 53 -m comment --comment "Rule For Control"
++  iptables -I INPUT -m comment --comment "Rule For Control" -j MIA
++  ip6tables -t filter -N MIA
++  ip6tables -I INPUT -m comment --comment "Rule For Control" -j MIA
+   strict=$(uci get mia.@basic[0].strict)
+   [ $strict -eq 1 ] && iptables -t filter -I FORWARD -m comment --comment "Rule For Control" -j MIA
++  [ $strict -eq 1 ] && ip6tables -t filter -I FORWARD -m comment --comment "Rule For Control" -j MIA
+   add_rule 
+ }
+ stop(){
+   iptables -t filter -D FORWARD -m comment --comment "Rule For Control" -j MIA 2>/dev/null
+-  iptables -D INPUT -p udp --dport 53 -m comment --comment "Rule For Control" -j MIA 2>/dev/null
+-  iptables -D INPUT -p tcp --dport 53 -m comment --comment "Rule For Control" -j MIA 2>/dev/null
+-  iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 53 -m comment --comment "Rule For Control" 2>/dev/null
+-  iptables -t nat -D PREROUTING -p tcp --dport 53 -j REDIRECT --to-ports 53 -m comment --comment "Rule For Control" 2>/dev/null
++  iptables -D INPUT -m comment --comment "Rule For Control" -j MIA 2>/dev/null
+   iptables -t filter -F MIA 2>/dev/null
+   iptables -t filter -X MIA 2>/dev/null
++  ip6tables -t filter -D FORWARD -m comment --comment "Rule For Control" -j MIA 2>/dev/null
++  ip6tables -D INPUT -m comment --comment "Rule For Control" -j MIA 2>/dev/null
++  ip6tables -t filter -F MIA 2>/dev/null
++  ip6tables -t filter -X MIA 2>/dev/null
+ }
