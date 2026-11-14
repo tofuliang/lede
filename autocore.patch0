@@ -1,0 +1,612 @@
+diff --git a/package/lean/autocore/files/arm/index.htm b/package/lean/autocore/files/arm/index.htm
+index e55a70799..2b91deac1 100644
+--- a/package/lean/autocore/files/arm/index.htm
++++ b/package/lean/autocore/files/arm/index.htm
+@@ -36,8 +36,8 @@
+ 
+ 	if luci.http.formvalue("status") == "1" then
+ 		local ntm = require "luci.model.network".init()
+-		local wan = ntm:get_wannet()
+-		local wan6 = ntm:get_wan6net()
++		local allwan = ntm:getall_wannet()
++		local allwan6 = ntm:getall_wan6net()
+ 
+ 		local conn_count = tonumber(
+ 			fs.readfile("/proc/sys/net/netfilter/nf_conntrack_count") or "") or 0
+@@ -68,32 +68,40 @@
+ 			wifinets   = stat.wifi_networks()
+ 		}
+ 
+-		if wan then
+-			rv.wan = {
+-				ipaddr  = wan:ipaddr(),
+-				gwaddr  = wan:gwaddr(),
+-				netmask = wan:netmask(),
+-				dns     = wan:dnsaddrs(),
+-				expires = wan:expires(),
+-				uptime  = wan:uptime(),
+-				proto   = wan:proto(),
+-				ifname  = wan:ifname(),
+-				link    = wan:adminlink()
+-			}
++		local wans = {}
++		if allwan then
++			for _,wan in ipairs(allwan) do
++				table.insert(wans,{
++					ipaddr  = wan:ipaddr(),
++					gwaddr  = wan:gwaddr(),
++					netmask = wan:netmask(),
++					dns     = wan:dnsaddrs(),
++					expires = wan:expires(),
++					uptime  = wan:uptime(),
++					proto   = wan:proto(),
++					ifname  = wan:ifname(),
++					link    = wan:adminlink()
++				})
++			end
+ 		end
+-
+-		if wan6 then
+-			rv.wan6 = {
+-				ip6addr   = wan6:ip6addr(),
+-				gw6addr   = wan6:gw6addr(),
+-				dns       = wan6:dns6addrs(),
+-				ip6prefix = wan6:ip6prefix(),
+-				uptime    = wan6:uptime(),
+-				proto     = wan6:proto(),
+-				ifname    = wan6:ifname(),
+-				link      = wan6:adminlink()
+-			}
++		rv.wans = wans
++
++		local wan6s = {}
++		if allwan6 then
++			for _,wan6 in ipairs(allwan6) do
++				table.insert(wan6s,{
++					ip6addr   = wan6:ip6addr(),
++					gw6addr   = wan6:gw6addr(),
++					dns       = wan6:dns6addrs(),
++					ip6prefix = wan6:ip6prefix(),
++					uptime    = wan6:uptime(),
++					proto     = wan6:proto(),
++					ifname    = wan6:ifname(),
++					link      = wan6:adminlink()
++				})
++			end
+ 		end
++		rv.wan6s = wan6s
+ 
+ 		if has_dsl then
+ 			local dsl_stat = luci.sys.exec("/etc/init.d/dsl_control lucistat")
+@@ -192,54 +200,56 @@
+ 
+ 			var si = document.getElementById('wan4_i');
+ 			var ss = document.getElementById('wan4_s');
+-			var ifc = info.wan;
+-
+-			if (ifc && ifc.ifname && ifc.proto != 'none')
+-			{
+-				var s = String.format(
+-					'<strong><%:Type%>: </strong>%s<br />' +
+-					'<strong><%:Address%>: </strong>%s<br />' +
+-					'<strong><%:Netmask%>: </strong>%s<br />' +
+-					'<strong><%:Gateway%>: </strong>%s<br />',
+-						ifc.proto,
+-						(ifc.ipaddr) ? ifc.ipaddr : '0.0.0.0',
+-						(ifc.netmask && ifc.netmask != ifc.ipaddr) ? ifc.netmask : '255.255.255.255',
+-						(ifc.gwaddr) ? ifc.gwaddr : '0.0.0.0'
+-				);
++			if(info.hasOwnProperty('wans') && info.wans.length > 0){
++				var s=''
++				si.innerHTML = ''
++				for (var ifc of info.wans){
++					if (ifc && ifc.ifname && ifc.proto != 'none')
++					{
++						s += String.format(
++							'<p><strong><%:Type%>: </strong>%s<br />' +
++							'<strong><%:Address%>: </strong>%s<br />' +
++							'<strong><%:Netmask%>: </strong>%s<br />' +
++							'<strong><%:Gateway%>: </strong>%s<br />',
++								ifc.proto,
++								(ifc.ipaddr) ? ifc.ipaddr : '0.0.0.0',
++								(ifc.netmask && ifc.netmask != ifc.ipaddr) ? ifc.netmask : '255.255.255.255',
++								(ifc.gwaddr) ? ifc.gwaddr : '0.0.0.0'
++						);
+ 
+-				for (var i = 0; i < ifc.dns.length; i++)
+-				{
+-					s += String.format(
+-						'<strong><%:DNS%> %d: </strong>%s<br />',
+-						i + 1, ifc.dns[i]
+-					);
+-				}
++						for (var i = 0; i < ifc.dns.length; i++)
++						{
++							s += String.format(
++								'<strong><%:DNS%> %d: </strong>%s<br />',
++								i + 1, ifc.dns[i]
++							);
++						}
+ 
+-				if (ifc.expires > -1)
+-				{
+-					s += String.format(
+-						'<strong><%:Expires%>: </strong>%t<br />',
+-						ifc.expires
+-					);
+-				}
++						if (ifc.expires > -1)
++						{
++							s += String.format(
++								'<strong><%:Expires%>: </strong>%t<br />',
++								ifc.expires
++							);
++						}
+ 
+-				if (ifc.uptime > 0)
+-				{
+-					s += String.format(
+-						'<strong><%:Connected%>: </strong>%t<br />',
+-						ifc.uptime
+-					);
++						if (ifc.uptime > 0)
++						{
++							s += String.format(
++								'<strong><%:Connected%>: </strong>%t<br />',
++								ifc.uptime
++							);
++						}
++						s+='</p>'
++						si.innerHTML += String.format(
++							'<p><img src="<%=resource%>/icons/ethernet.png" />' +
++							'<br /><small><a href="%s">%s</a></small></p>',
++								ifc.link, ifc.ifname
++						);
++					}
+ 				}
+-
+ 				ss.innerHTML = String.format('<small>%s</small>', s);
+-				si.innerHTML = String.format(
+-					'<img src="<%=resource%>/icons/ethernet.png" />' +
+-					'<br /><small><a href="%s">%s</a></small>',
+-						ifc.link, ifc.ifname
+-				);
+-			}
+-			else
+-			{
++			}else{
+ 				si.innerHTML = '<img src="<%=resource%>/icons/ethernet_disabled.png" /><br /><small>?</small>';
+ 				ss.innerHTML = '<em><%:Not connected%></em>';
+ 			}
+@@ -247,70 +257,72 @@
+ 			<% if has_ipv6 then %>
+ 			var si6 = document.getElementById('wan6_i');
+ 			var ss6 = document.getElementById('wan6_s');
+-			var ifc6 = info.wan6;
+-
+-			if (ifc6 && ifc6.ifname && ifc6.proto != 'none')
+-			{
+-				var s = String.format(
+-					'<strong><%:Type%>: </strong>%s%s<br />',
+-						ifc6.proto, (ifc6.ip6prefix) ? '-pd' : ''
+-				);
+-				
+-				if (!ifc6.ip6prefix)
+-				{
+-					s += String.format(
+-						'<strong><%:Address%>: </strong>%s<br />',
+-						(ifc6.ip6addr) ? ifc6.ip6addr : '::'
+-					);
+-				}
+-				else
+-				{
+-					s += String.format(
+-						'<strong><%:Prefix Delegated%>: </strong>%s<br />',
+-						ifc6.ip6prefix
+-					);
+-					if (ifc6.ip6addr)
++			if(info.hasOwnProperty('wan6s') && info.wan6s.length > 0){
++				var s=''
++				si6.innerHTML = ''
++				for (var ifc6 of info.wan6s){
++					if (ifc6 && ifc6.ifname && ifc6.proto != 'none')
+ 					{
+ 						s += String.format(
+-							'<strong><%:Address%>: </strong>%s<br />',
+-							ifc6.ip6addr
++							'<p><strong><%:Type%>: </strong>%s%s<br />',
++								ifc6.proto, (ifc6.ip6prefix) ? '-pd' : ''
+ 						);
+-					}
+-				}
++						if (!ifc6.ip6prefix)
++						{
++							s += String.format(
++								'<strong><%:Address%>: </strong>%s<br />',
++								(ifc6.ip6addr) ? ifc6.ip6addr : '::'
++							);
++						}
++						else
++						{
++							s += String.format(
++								'<strong><%:Prefix Delegated%>: </strong>%s<br />',
++								ifc6.ip6prefix
++							);
++							if (ifc6.ip6addr)
++							{
++								s += String.format(
++									'<strong><%:Address%>: </strong>%s<br />',
++									ifc6.ip6addr
++								);
++							}
++						}
+ 
+-				s += String.format(
+-					'<strong><%:Gateway%>: </strong>%s<br />',
+-						(ifc6.gw6addr) ? ifc6.gw6addr : '::'
+-				);
++						s += String.format(
++							'<strong><%:Gateway%>: </strong>%s<br />',
++								(ifc6.gw6addr) ? ifc6.gw6addr : '::'
++						);
+ 
+-				for (var i = 0; i < ifc6.dns.length; i++)
+-				{
+-					s += String.format(
+-						'<strong><%:DNS%> %d: </strong>%s<br />',
+-						i + 1, ifc6.dns[i]
+-					);
+-				}
++						for (var i = 0; i < ifc6.dns.length; i++)
++						{
++							s += String.format(
++								'<strong><%:DNS%> %d: </strong>%s<br />',
++								i + 1, ifc6.dns[i]
++							);
++						}
+ 
+-				if (ifc6.uptime > 0)
+-				{
+-					s += String.format(
+-						'<strong><%:Connected%>: </strong>%t<br />',
+-						ifc6.uptime
+-					);
++						if (ifc6.uptime > 0)
++						{
++							s += String.format(
++								'<strong><%:Connected%>: </strong>%t<br />',
++								ifc6.uptime
++							);
++						}
++						s += '</p>'
++						si6.innerHTML += String.format(
++							'<p><img src="<%=resource%>/icons/ethernet.png" />' +
++							'<br /><small><a href="%s">%s</a></small></p>',
++								ifc6.link, ifc6.ifname
++						);
++					}
+ 				}
+-
+ 				ss6.innerHTML = String.format('<small>%s</small>', s);
+-				si6.innerHTML = String.format(
+-					'<img src="<%=resource%>/icons/ethernet.png" />' +
+-					'<br /><small><a href="%s">%s</a></small>',
+-						ifc6.link, ifc6.ifname
+-				);
+-			}
+-			else
+-			{
++			}else{
+ 				si6.innerHTML = '<img src="<%=resource%>/icons/ethernet_disabled.png" /><br /><small>?</small>';
+ 				ss6.innerHTML = '<em><%:Not connected%></em>';
+ 			}
++
+ 			<% end %>
+ 
+ 			<% if has_dsl then %>
+diff --git a/package/lean/autocore/files/x86/index.htm b/package/lean/autocore/files/x86/index.htm
+index cd63bf02c..2c93c77eb 100644
+--- a/package/lean/autocore/files/x86/index.htm
++++ b/package/lean/autocore/files/x86/index.htm
+@@ -36,8 +36,8 @@
+ 
+ 	if luci.http.formvalue("status") == "1" then
+ 		local ntm = require "luci.model.network".init()
+-		local wan = ntm:get_wannet()
+-		local wan6 = ntm:get_wan6net()
++		local allwan = ntm:getall_wannet()
++		local allwan6 = ntm:getall_wan6net()
+ 
+ 		local conn_count = tonumber(
+ 			fs.readfile("/proc/sys/net/netfilter/nf_conntrack_count") or "") or 0
+@@ -72,32 +72,40 @@
+ 			wifinets   = stat.wifi_networks()
+ 		}
+ 
+-		if wan then
+-			rv.wan = {
+-				ipaddr  = wan:ipaddr(),
+-				gwaddr  = wan:gwaddr(),
+-				netmask = wan:netmask(),
+-				dns     = wan:dnsaddrs(),
+-				expires = wan:expires(),
+-				uptime  = wan:uptime(),
+-				proto   = wan:proto(),
+-				ifname  = wan:ifname(),
+-				link    = wan:adminlink()
+-			}
++		local wans = {}
++		if allwan then
++			for _,wan in ipairs(allwan) do
++				table.insert(wans,{
++					ipaddr  = wan:ipaddr(),
++					gwaddr  = wan:gwaddr(),
++					netmask = wan:netmask(),
++					dns     = wan:dnsaddrs(),
++					expires = wan:expires(),
++					uptime  = wan:uptime(),
++					proto   = wan:proto(),
++					ifname  = wan:ifname(),
++					link    = wan:adminlink()
++				})
++			end
+ 		end
+-
+-		if wan6 then
+-			rv.wan6 = {
+-				ip6addr   = wan6:ip6addr(),
+-				gw6addr   = wan6:gw6addr(),
+-				dns       = wan6:dns6addrs(),
+-				ip6prefix = wan6:ip6prefix(),
+-				uptime    = wan6:uptime(),
+-				proto     = wan6:proto(),
+-				ifname    = wan6:ifname(),
+-				link      = wan6:adminlink()
+-			}
++		rv.wans = wans
++
++		local wan6s = {}
++		if allwan6 then
++			for _,wan6 in ipairs(allwan6) do
++				table.insert(wan6s,{
++					ip6addr   = wan6:ip6addr(),
++					gw6addr   = wan6:gw6addr(),
++					dns       = wan6:dns6addrs(),
++					ip6prefix = wan6:ip6prefix(),
++					uptime    = wan6:uptime(),
++					proto     = wan6:proto(),
++					ifname    = wan6:ifname(),
++					link      = wan6:adminlink()
++				})
++			end
+ 		end
++		rv.wan6s = wan6s
+ 
+ 		if has_dsl then
+ 			local dsl_stat = luci.sys.exec("/etc/init.d/dsl_control lucistat")
+@@ -196,54 +204,56 @@
+ 
+ 			var si = document.getElementById('wan4_i');
+ 			var ss = document.getElementById('wan4_s');
+-			var ifc = info.wan;
+-
+-			if (ifc && ifc.ifname && ifc.proto != 'none')
+-			{
+-				var s = String.format(
+-					'<strong><%:Type%>: </strong>%s<br />' +
+-					'<strong><%:Address%>: </strong>%s<br />' +
+-					'<strong><%:Netmask%>: </strong>%s<br />' +
+-					'<strong><%:Gateway%>: </strong>%s<br />',
+-						ifc.proto,
+-						(ifc.ipaddr) ? ifc.ipaddr : '0.0.0.0',
+-						(ifc.netmask && ifc.netmask != ifc.ipaddr) ? ifc.netmask : '255.255.255.255',
+-						(ifc.gwaddr) ? ifc.gwaddr : '0.0.0.0'
+-				);
++			if(info.hasOwnProperty('wans') && info.wans.length > 0){
++				var s=''
++				si.innerHTML = ''
++				for (var ifc of info.wans){
++					if (ifc && ifc.ifname && ifc.proto != 'none')
++					{
++						s += String.format(
++							'<p><strong><%:Type%>: </strong>%s<br />' +
++							'<strong><%:Address%>: </strong>%s<br />' +
++							'<strong><%:Netmask%>: </strong>%s<br />' +
++							'<strong><%:Gateway%>: </strong>%s<br />',
++								ifc.proto,
++								(ifc.ipaddr) ? ifc.ipaddr : '0.0.0.0',
++								(ifc.netmask && ifc.netmask != ifc.ipaddr) ? ifc.netmask : '255.255.255.255',
++								(ifc.gwaddr) ? ifc.gwaddr : '0.0.0.0'
++						);
+ 
+-				for (var i = 0; i < ifc.dns.length; i++)
+-				{
+-					s += String.format(
+-						'<strong><%:DNS%> %d: </strong>%s<br />',
+-						i + 1, ifc.dns[i]
+-					);
+-				}
++						for (var i = 0; i < ifc.dns.length; i++)
++						{
++							s += String.format(
++								'<strong><%:DNS%> %d: </strong>%s<br />',
++								i + 1, ifc.dns[i]
++							);
++						}
+ 
+-				if (ifc.expires > -1)
+-				{
+-					s += String.format(
+-						'<strong><%:Expires%>: </strong>%t<br />',
+-						ifc.expires
+-					);
+-				}
++						if (ifc.expires > -1)
++						{
++							s += String.format(
++								'<strong><%:Expires%>: </strong>%t<br />',
++								ifc.expires
++							);
++						}
+ 
+-				if (ifc.uptime > 0)
+-				{
+-					s += String.format(
+-						'<strong><%:Connected%>: </strong>%t<br />',
+-						ifc.uptime
+-					);
++						if (ifc.uptime > 0)
++						{
++							s += String.format(
++								'<strong><%:Connected%>: </strong>%t<br />',
++								ifc.uptime
++							);
++						}
++						s+='</p>'
++						si.innerHTML += String.format(
++							'<p><img src="<%=resource%>/icons/ethernet.png" />' +
++							'<br /><small><a href="%s">%s</a></small></p>',
++								ifc.link, ifc.ifname
++						);
++					}
+ 				}
+-
+ 				ss.innerHTML = String.format('<small>%s</small>', s);
+-				si.innerHTML = String.format(
+-					'<img src="<%=resource%>/icons/ethernet.png" />' +
+-					'<br /><small><a href="%s">%s</a></small>',
+-						ifc.link, ifc.ifname
+-				);
+-			}
+-			else
+-			{
++			}else{
+ 				si.innerHTML = '<img src="<%=resource%>/icons/ethernet_disabled.png" /><br /><small>?</small>';
+ 				ss.innerHTML = '<em><%:Not connected%></em>';
+ 			}
+@@ -251,70 +261,72 @@
+ 			<% if has_ipv6 then %>
+ 			var si6 = document.getElementById('wan6_i');
+ 			var ss6 = document.getElementById('wan6_s');
+-			var ifc6 = info.wan6;
+-
+-			if (ifc6 && ifc6.ifname && ifc6.proto != 'none')
+-			{
+-				var s = String.format(
+-					'<strong><%:Type%>: </strong>%s%s<br />',
+-						ifc6.proto, (ifc6.ip6prefix) ? '-pd' : ''
+-				);
+-				
+-				if (!ifc6.ip6prefix)
+-				{
+-					s += String.format(
+-						'<strong><%:Address%>: </strong>%s<br />',
+-						(ifc6.ip6addr) ? ifc6.ip6addr : '::'
+-					);
+-				}
+-				else
+-				{
+-					s += String.format(
+-						'<strong><%:Prefix Delegated%>: </strong>%s<br />',
+-						ifc6.ip6prefix
+-					);
+-					if (ifc6.ip6addr)
++			if(info.hasOwnProperty('wan6s') && info.wan6s.length > 0){
++				var s=''
++				si6.innerHTML = ''
++				for (var ifc6 of info.wan6s){
++					if (ifc6 && ifc6.ifname && ifc6.proto != 'none')
+ 					{
+ 						s += String.format(
+-							'<strong><%:Address%>: </strong>%s<br />',
+-							ifc6.ip6addr
++							'<p><strong><%:Type%>: </strong>%s%s<br />',
++								ifc6.proto, (ifc6.ip6prefix) ? '-pd' : ''
+ 						);
+-					}
+-				}
++						if (!ifc6.ip6prefix)
++						{
++							s += String.format(
++								'<strong><%:Address%>: </strong>%s<br />',
++								(ifc6.ip6addr) ? ifc6.ip6addr : '::'
++							);
++						}
++						else
++						{
++							s += String.format(
++								'<strong><%:Prefix Delegated%>: </strong>%s<br />',
++								ifc6.ip6prefix
++							);
++							if (ifc6.ip6addr)
++							{
++								s += String.format(
++									'<strong><%:Address%>: </strong>%s<br />',
++									ifc6.ip6addr
++								);
++							}
++						}
+ 
+-				s += String.format(
+-					'<strong><%:Gateway%>: </strong>%s<br />',
+-						(ifc6.gw6addr) ? ifc6.gw6addr : '::'
+-				);
++						s += String.format(
++							'<strong><%:Gateway%>: </strong>%s<br />',
++								(ifc6.gw6addr) ? ifc6.gw6addr : '::'
++						);
+ 
+-				for (var i = 0; i < ifc6.dns.length; i++)
+-				{
+-					s += String.format(
+-						'<strong><%:DNS%> %d: </strong>%s<br />',
+-						i + 1, ifc6.dns[i]
+-					);
+-				}
++						for (var i = 0; i < ifc6.dns.length; i++)
++						{
++							s += String.format(
++								'<strong><%:DNS%> %d: </strong>%s<br />',
++								i + 1, ifc6.dns[i]
++							);
++						}
+ 
+-				if (ifc6.uptime > 0)
+-				{
+-					s += String.format(
+-						'<strong><%:Connected%>: </strong>%t<br />',
+-						ifc6.uptime
+-					);
++						if (ifc6.uptime > 0)
++						{
++							s += String.format(
++								'<strong><%:Connected%>: </strong>%t<br />',
++								ifc6.uptime
++							);
++						}
++						s += '</p>'
++						si6.innerHTML += String.format(
++							'<p><img src="<%=resource%>/icons/ethernet.png" />' +
++							'<br /><small><a href="%s">%s</a></small></p>',
++								ifc6.link, ifc6.ifname
++						);
++					}
+ 				}
+-
+ 				ss6.innerHTML = String.format('<small>%s</small>', s);
+-				si6.innerHTML = String.format(
+-					'<img src="<%=resource%>/icons/ethernet.png" />' +
+-					'<br /><small><a href="%s">%s</a></small>',
+-						ifc6.link, ifc6.ifname
+-				);
+-			}
+-			else
+-			{
++			}else{
+ 				si6.innerHTML = '<img src="<%=resource%>/icons/ethernet_disabled.png" /><br /><small>?</small>';
+ 				ss6.innerHTML = '<em><%:Not connected%></em>';
+ 			}
++
+ 			<% end %>
+ 
+ 			<% if has_dsl then %>
